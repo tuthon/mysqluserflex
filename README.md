@@ -53,6 +53,16 @@ By default, system accounts are skipped unless explicitly included.
 ./mysqluserflex.sh -m backup -h localhost -u root -f users_57.sql --target-version 5.7
 ```
 
+**Backup from MySQL 5.6 to MySQL 8.0:**
+```bash
+./mysqluserflex.sh -m backup -h localhost -u root -f users_8.sql --target-version 8.0
+```
+
+**Backup only selected users**
+```bash
+./mysqluserflex.sh -m backup -h localhost -u root -f selected_users.sql --user=user1,user2,user3,.......
+```
+
 ---
 
 ## 🔄 Restore Example
@@ -78,6 +88,7 @@ By default, system accounts are skipped unless explicitly included.
 | `--include-system-users`       | Includes system accounts in backup (skipped by default)         |
 | `--downgrade-passwords legacy` | Converts 8.0+ passwords to SHA1 (requires prior `ALTER USER`)   |
 | `--force-convert-plugin`       | Force conversion to `mysql_native_password` (useful for 5.6)    |
+| `--port`                       | MySQL connection port (example: 3306)                           |
 | `--socket`                     | Path to MySQL socket file (e.g., `/var/run/mysqld/mysqld.sock`) |
 | `--user=username`              | Backup only a specific user                                     |
 | `--generate-passwords`         | Generates new random passwords for MySQL users                  |
