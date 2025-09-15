@@ -120,16 +120,16 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON testdb.* TO 'readwrite_user'@'localhost'
 ## 📊 Results & Diagrams
 
 ### Migration Results
-![Migration Results](docs/mysqluserflex_migration_results.png)
+![Migration Results – MySQLUserFlex showing upgrade vs downgrade success rates](docs/mysqluserflex_migration_results.png)
 
 ### Backup & Restore Process
-![Backup & Restore Process](docs/backup_restore_process.png)
+![Backup and Restore Process – Step-by-step workflow of MySQLUserFlex script](docs/backup_restore_process.png)
 
 ### MySQLUserFlex Workflow
-![MySQLUserFlex Workflow](docs/mysqluserflex_workflow.jpg)
+![MySQLUserFlex Workflow – Detailed process of backup and restore with privilege filtering](docs/mysqluserflex_workflow.jpg)
 
 ### Privilege Changes Between Versions
-![Privileges](docs/mysql_privileges_vertical.jpg)
+![Privilege Changes – Key differences in MySQL privileges from 5.6, 5.7, to 8.0+](docs/mysql_privileges_vertical.jpg)
 
 ---
 
