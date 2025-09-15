@@ -5,21 +5,21 @@
 SCRIPT_NAME=$(basename "$0")
 SCRIPT_PATH=$(cd "$(dirname "$0")" && pwd)
 
-echo "▶️ Стартиран е $SCRIPT_NAME от $SCRIPT_PATH"
-echo "📌 Версия на скрипта: v1.0.16"
+echo "▶️ $SCRIPT_NAME started from $SCRIPT_PATH"
+echo "📌 Script version: v1.0.16"
 
-# Скрипт за архивиране и възстановяване на MySQL потребители
-# Поддържа MySQL 5.6, 5.7 и 8.0+
-# Поддържа експортиране от 8.0 към по-стари версии чрез --target-version
-# Използва SHOW GRANTS за безопасно генериране на CREATE USER и GRANT
-# По подразбиране системните потребители се пропускат, освен ако не се подаде --include-system-users
-# Архивиране от MySQL 8.0 към MySQL 8.0 (по подразбиране): ./backup_users.sh -m backup -h localhost -u root -f users.sql
-# Архивиране от MySQL 8.0 към MySQL 5.6: ./backup_users.sh -m backup -h localhost -u root -f users_56.sql --target-version 5.6
-# Архивиране от MySQL 8.0 към MySQL 5.7: ./backup_users.sh -m backup -h localhost -u root -f users_57.sql --target-version 5.7
-# Възстановяване: ./backup_users.sh -m restore -h localhost -u root -f users_56.sql
+# Script for backing up and restoring MySQL users
+# Supports MySQL 5.6, 5.7, and 8.0+
+# Allows exporting from 8.0 to older versions using --target-version
+# Uses SHOW GRANTS for safe generation of CREATE USER and GRANT statements
+# By default, system users are skipped unless --include-system-users is specified
+# Backup from MySQL 8.0 to MySQL 8.0 (default): ./backup_users.sh -m backup -h localhost -u root -f users.sql
+# Backup from MySQL 8.0 to MySQL 5.6: ./backup_users.sh -m backup -h localhost -u root -f users_56.sql --target-version 5.6
+# Backup from MySQL 8.0 to MySQL 5.7: ./backup_users.sh -m backup -h localhost -u root -f users_57.sql --target-version 5.7
+# Restore: ./backup_users.sh -m restore -h localhost -u root -f users_56.sql
 
 
-# --------- Променливи по подразбиране -----------
+# --------- Default variables -----------
 FILTER_USER=""
 MYSQL_HOST=""
 MYSQL_USER=""
@@ -37,29 +37,30 @@ GENERATE_PASSWORDS=0
 # -----------------------------------------------
 
 usage() {
-  echo "Използване:"
-  echo "  $0 -m [backup|restore] -h host -u user [-p pass] -f файл.sql [--target-version 5.6|5.7|8.0] [--include-system-users] [--downgrade-passwords legacy] [--force-convert-plugin] [--port] [--socket] [--user=username] [--generate-passwords]"
+  echo "Usage:"
+  echo "  $0 -m [backup|restore] -h host -u user [-p pass] -f file.sql [--target-version 5.6|5.7|8.0] [--include-system-users] [--downgrade-passwords legacy] [--force-convert-plugin] [--port] [--socket] [--user=username] [--generate-passwords]"
   echo ""
-  echo "Аргументи:"
-  echo "  -m  backup или restore"
-  echo "  -h  MySQL хост (по подразбиране: localhost)"
-  echo "  -u  MySQL потребител"
-  echo "  -p  MySQL парола (ако не е подадена, ще се изиска интерактивно)"
-  echo "  -P  MySQL Порт за връзка с MySQL (по подразбиране: 3306)"  
-  echo "  -f  Файл за архив/възстановяване"
-  echo "  --target-version  Целева версия на MySQL при backup (по подразбиране: текущата версия)"
-  echo "  --include-system-users  Включва системните потребители в архива (по подразбиране се пропускат)"
-  echo "  --downgrade-passwords legacy  Преобразува новите пароли от 8.0 към SHA1 формат (изисква ALTER USER преди това)"
-  echo "  --force-convert-plugin  Насилствена конверсия към mysql_native_password, ако целевата версия е 5.6"
-  echo "  --port  Порт за връзка с MySQL (пример: 3306)"
-  echo "  --socket Път до socket файл за локална връзка (пример: /var/run/mysqld/mysqld.sock)"
-  echo "  --user=username  Създава архив само за конкретния потребител (при режим backup)"
-  echo "  --generate-passwords  Създава произволни сигурни пароли за MYSQL потребителите"
+  echo "Arguments:"
+  echo "  -m  backup or restore"
+  echo "  -h  MySQL host (default: localhost)"
+  echo "  -u  MySQL user"
+  echo "  -p  MySQL password (if not provided, will be requested interactively)"
+  echo "  -P  MySQL port for connection (default: 3306)"  
+  echo "  -f  File for backup/restore"
+  echo "  --target-version  Target MySQL version for backup (default: current version)"
+  echo "  --include-system-users  Includes system users in the backup (skipped by default)"
+  echo "  --downgrade-passwords legacy  Converts new 8.0+ passwords to SHA1 format (requires ALTER USER beforehand)"
+  echo "  --force-convert-plugin  Force conversion to mysql_native_password if the target version is 5.6"
+  echo "  --port  MySQL connection port (example: 3306)"
+  echo "  --socket Path to the socket file for local connection (example: /var/run/mysqld/mysqld.sock)"
+  echo "  --user=username  Creates a backup only for the specified user (backup mode)"
+  echo "  --generate-passwords  Generates random strong passwords for MySQL users"
   
   exit 1
 }
 
-# Четене на параметрите
+
+# Reading the parameters
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --user=*)
@@ -85,8 +86,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 
-# Изграждаме базовия mysql клиент команден низ с параметрите
-# Това осигурява пълна съвместимост със socket/port при backup и restore
+# Build the base mysql client command string with parameters
+# Ensures full compatibility with socket/port in both backup and restore
 build_mysql_command() {
   local cmd=(mysql -u"$MYSQL_USER")
   [[ -n "$MYSQL_PASS" ]] && cmd+=( -p"$MYSQL_PASS" )
@@ -97,7 +98,7 @@ build_mysql_command() {
 }
 
 
-# Списък със системни потребители, които да изключим от архивирането
+# List of system users to exclude from backup
 SYSTEM_USERS=(
   'mysql.session'
   'mysql.sys'
@@ -106,7 +107,7 @@ SYSTEM_USERS=(
   'root'
 )
 
-# Функция за проверка дали даден потребител е системен
+# Function to check if a given user is a system account
 is_system_user() {
   local user="$1"
   for sys_user in "${SYSTEM_USERS[@]}"; do
@@ -117,10 +118,11 @@ is_system_user() {
   return 1
 }
 
-# Функция за откриване на основната версия на MySQL
+# Function to detect the major MySQL version
 detect_mysql_version() {
   if ! command -v mysql >/dev/null 2>&1; then
-    echo "❌ Грешка: Командата 'mysql' не е налична в PATH. Уверете се, че MySQL клиентът е инсталиран."
+    echo "❌ Error: The 'mysql' command is not available in PATH. Please ensure that the MySQL client is installed."
+
     exit 1
   fi
  
@@ -129,7 +131,7 @@ detect_mysql_version() {
   
 
   if [[ -z "$version" ]]; then
-    echo "❌ Неуспешно извличане на версията на MySQL. Проверете дали имате достъп до сървъра и дали параметрите са коректни."
+    echo "❌ Failed to retrieve the MySQL version. Check if you have access to the server and if the parameters are correct."
     exit 1
   fi
 
@@ -140,12 +142,12 @@ detect_mysql_version() {
   elif [[ $version =~ ^8\. ]]; then
     MYSQL_MAJOR_VERSION="8.0"
   else
-    echo "⚠️ Неподдържана или неразпозната MySQL версия: $version"
+    echo "⚠️ Unsupported or unrecognized MySQL version: $version"
     exit 1
   fi
 }
 
-# Филтрира неподдържани в MySQL 5.6 глобални привилегии
+# Filter out global privileges not supported in MySQL 5.6
 filter_grants_for_target_version() {
   local input_grants="$1"
   if [[ "$TARGET_VERSION" == "5.6" ]]; then
@@ -160,7 +162,7 @@ filter_grants_for_target_version() {
   fi
 }
 
-# Генерира DROP USER блок, съвместим с MySQL 5.6
+# Generate DROP USER block compatible with MySQL 5.6
 generate_safe_drop_user() {
   local user="$1"
   local host="$2"
@@ -172,27 +174,27 @@ generate_safe_drop_user() {
   echo "DEALLOCATE PREPARE stmt;"
 }
 
- # Генерира парола от 12-16 символа, съдържаща главни, малки, цифри и специални символи
+# Generate a password of 12–16 characters, containing uppercase, lowercase, digits, and special symbols
 generate_strong_password() {
   LC_ALL=C tr -dc 'A-Za-z0-9!@#$%^&*()-_=+[]{}<>?' </dev/urandom | head -c 14
 }
 
 if [[ "$GENERATE_PASSWORDS" -eq 1 ]]; then
 	PASSWORD_FILE="${FILE%.*}.txt"
-	> "$PASSWORD_FILE"  # Това ще създаде/нулира файла с потребителите и паролите
+	> "$PASSWORD_FILE"  # This will create/reset the file with users and passwords
 fi
 
 [[ -z "$MODE" || -z "$MYSQL_HOST" || -z "$MYSQL_USER" || -z "$MYSQL_PORT" || -z "$FILE" ]] && usage
 
 
-# Подготовка на WHERE клаузата, ако е подаден --user
+# Prepare the WHERE clause if --user is provided
 if [[ -n "$FILTER_USER" ]]; then
   IFS=',' read -ra USERS <<< "$FILTER_USER"
   USER_CONDITIONS=""
   for u in "${USERS[@]}"; do
     USER_CONDITIONS+="'$u',"
   done
-  USER_CONDITIONS="${USER_CONDITIONS%,}"  # махаме последната запетая
+  USER_CONDITIONS="${USER_CONDITIONS%,}"  # remove the trailing comma
   WHERE_CLAUSE="WHERE User IN ($USER_CONDITIONS)"
 else
   WHERE_CLAUSE=""
@@ -200,15 +202,15 @@ fi
 
 
 if [[ $PROMPT_PASS -eq 1 ]]; then
-  read -s -p "Въведи парола за MySQL потребителя '$MYSQL_USER': " MYSQL_PASS
+  read -s -p "Enter password for MySQL user '$MYSQL_USER': " MYSQL_PASS
   echo
 fi
 
-# Проверка дали всички избрани потребители съществуват (поддържа user и user@host)
+# Check if all selected users exist (supports user and user@host)
 if [[ -n "$FILTER_USER" ]]; then
   IFS=',' read -ra USERS <<< "$FILTER_USER"
   for u in "${USERS[@]}"; do
-    # Поддържа формати "dba" и "dba@localhost"
+    # Supports formats "dba" and "dba@localhost"
     if [[ "$u" == *"@"* ]]; then
       username="${u%@*}"
       hostname="${u#*@}"
@@ -217,26 +219,26 @@ if [[ -n "$FILTER_USER" ]]; then
       hostname="%"
     fi
 
-    # Явно задаваме timeout, -B/-N за безшумен изход и трием whitespace
+    # Explicitly set timeout, -B/-N for silent output, and trim whitespace
     exists=$($(build_mysql_command) --connect-timeout=8 -B -N \
       -e "SELECT COUNT(*) FROM mysql.user WHERE User='${username}' AND Host='${hostname}';" 2>/dev/null \
       | tr -d '[:space:]')
 
-    # Ако заявката се провали, $exists може да е празно → третираме като 0
+    # If the query fails, $exists may be empty → treat as 0
     [[ -z "$exists" ]] && exists=0
 
     if [[ "$exists" -lt 1 ]]; then
-      echo "❌ Грешка: Потребителят '${username}'@'${hostname}' не съществува в MySQL сървъра."
+      echo "❌ Error: User '${username}'@'${hostname}' does not exist on the MySQL server."
       exit 1
     fi
   done
 fi
 
-# Определяне на версията на MySQL
+# Determine MySQL version
 detect_mysql_version
 [[ -z "$TARGET_VERSION" ]] && TARGET_VERSION="$MYSQL_MAJOR_VERSION"
 
-# Проверка дали даден потребител съществува
+# Check if a given user exists
 user_exists() {
   local user="$1"
   local host="$2"
@@ -246,21 +248,21 @@ user_exists() {
   [[ "$count" -gt 0 ]]
 }
 
-# Проверка дали е валиден стар SHA1 хеш
+# Check if it is a valid old SHA1 hash
 is_valid_sha1_hash() {
   [[ "$1" =~ ^\*[A-F0-9]{40}$ ]]
 }
 
 if [[ "$MODE" == "backup" ]]; then
-    echo "▶️ Стартиране на архивиране на MySQL потребители..."
+    echo "▶️ Starting backup of MySQL users..."
 
     if [[ -f "$FILE" ]]; then
-      read -p "⚠️ Файлът $FILE вече съществува. Презаписване? (y/n): " confirm
+      read -p "⚠️ The file $FILE already exists. Overwrite? (y/n): " confirm
       [[ "$confirm" != "y" ]] && exit 1
     fi
 
-    echo "-- Архив на потребители и привилегии" > "$FILE"
-    echo "-- Източник: MySQL $MYSQL_MAJOR_VERSION, Целева версия: $TARGET_VERSION" >> "$FILE"
+    echo "-- Backup of users and privileges" > "$FILE"
+    echo "-- Source: MySQL $MYSQL_MAJOR_VERSION, Target version: $TARGET_VERSION" >> "$FILE"
 
 	if [[ "$MYSQL_MAJOR_VERSION" == "5.6" ]]; then
 		QUERY="SELECT User, Host, plugin, 														 
@@ -301,15 +303,13 @@ if [[ "$MODE" == "backup" ]]; then
    eval "$(build_mysql_command) -N -e \"$QUERY\"" | \
 
    while IFS=$'\t' read -r user host plugin auth auth_hex pass_expired pass_changed pass_lifetime locked Pass_reuse_history Pass_reuse_time failed_login_attempts password_lock_time_days max_user_connections; do
-
-# echo "ДЕБЪГ: Стойността на променливите е \$user: '$user'" echo "ДЕБЪГ: Стойността на променливите е \$host: '$host'" echo "ДЕБЪГ: Стойността на променливите е \$plugin: '$plugin'" echo "ДЕБЪГ: Стойността на променливите е \$auth: '$auth'" echo "ДЕБЪГ: Стойността на променливите е \$auth_hex: '$auth_hex'" echo "ДЕБЪГ: Стойността на променливите е \$pass_expired: '$pass_expired'" echo "ДЕБЪГ: Стойността на променливите е \$pass_changed: '$pass_changed'" 
  
    if [[ $INCLUDE_SYSTEM_USERS -eq 0 ]] && is_system_user "$user"; then
-      echo "⏭ Пропускане на системен потребител: '$user'@'$host'"
+      echo "⏭ Skipping system user: '$user'@'$host'"
       continue
    fi
 
-   echo "-- Потребител: '$user'@'$host'" >> "$FILE"
+   echo "-- User: '$user'@'$host'" >> "$FILE"
 
    if [[ "$TARGET_VERSION" == "5.6" ]]; then
 
@@ -318,25 +318,25 @@ if [[ "$MODE" == "backup" ]]; then
       if [[ "$GENERATE_PASSWORDS" -eq 1 ]]; then
          rand_pass=$(generate_strong_password)
          echo "CREATE USER '$user'@'$host' IDENTIFIED BY '$rand_pass';" >> "$FILE"
-         echo "👤 Създаден потребител: '$user'@'$host' с парола: $rand_pass" >> "$PASSWORD_FILE"
+         echo "👤 Created user: '$user'@'$host' with password: $rand_pass" >> "$PASSWORD_FILE"
       else
          if [[ "$auth" == "__EMPTY__" ]]; then
              echo "CREATE USER '$user'@'$host' IDENTIFIED BY PASSWORD '';" >> "$FILE"
          elif is_valid_sha1_hash "$auth"; then   
              echo "CREATE USER '$user'@'$host' IDENTIFIED BY PASSWORD '$auth';" >> "$FILE"
          else
-            echo "-- ⚠️ Паролата не е съвместима с MySQL 5.6 (plugin: $plugin)." >> "$FILE"
+            echo "-- ⚠️ Password is not compatible with MySQL 5.6 (plugin: $plugin)." >> "$FILE"
             if [[ $DOWNGRADE_PASSWORDS -eq 1 ]]; then
-               echo "-- 🔁 Очаква се паролата да е предварително преобразувана чрез ALTER USER ... IDENTIFIED WITH mysql_native_password BY 'парола'" >> "$FILE"
+               echo "-- 🔁 The password is expected to be pre-converted using ALTER USER ... IDENTIFIED WITH mysql_native_password BY 'password'" >> "$FILE"
                echo "CREATE USER '$user'@'$host' IDENTIFIED BY PASSWORD '$auth';" >> "$FILE"
             elif [[ $FORCE_CONVERT_PLUGIN -eq 1 ]]; then
-               echo "-- 🔁 Принудителна конверсия към mysql_native_password с празна парола" >> "$FILE"
+               echo "-- 🔁 Forced conversion to mysql_native_password with an empty password" >> "$FILE"
                echo "CREATE USER '$user'@'$host' IDENTIFIED WITH 'mysql_native_password' BY '';" >> "$FILE"
             else
                if [[ "$MYSQL_MAJOR_VERSION" == "5.6" ]]; then
                   echo "CREATE USER '$user'@'$host' IDENTIFIED BY '$auth';" >> "$FILE"
                else
-                  echo "-- ⚠️ Може да избереш между създаване с празна парола или смяна на типа на паролата чрез ALTER USER." >> "$FILE"
+                  echo "-- ⚠️ You may choose between creating the user with an empty password or changing the password type via ALTER USER." >> "$FILE"
                   echo "CREATE USER '$user'@'$host' IDENTIFIED BY 'ADD NEW PASSWORD';" >> "$FILE"
                fi
             fi
@@ -349,66 +349,66 @@ if [[ "$MODE" == "backup" ]]; then
       if [[ "$GENERATE_PASSWORDS" -eq 1 ]]; then
          rand_pass=$(generate_strong_password)
          echo "CREATE USER '$user'@'$host' IDENTIFIED BY '$rand_pass';" >> "$FILE"
-         echo "👤 Създаден потребител: '$user'@'$host' с парола: $rand_pass" >> "$PASSWORD_FILE"
+         echo "👤 Created user: '$user'@'$host' with password: $rand_pass" >> "$PASSWORD_FILE"
       else
 
-         # ако не генерираме нови пароли
+         # if are not generating new passwords
          if [[ "$auth" == "__EMPTY__" ]]; then
-            # празна парола
+            # empty password
             echo "CREATE USER \`$user\`@\`$host\` IDENTIFIED WITH '$plugin' AS '';" >> "$FILE"
          elif [[ "$plugin" == "mysql_native_password" && "$auth" == \** ]]; then
-            # ASCII хеш '*....' е безопасен като текст
+            # ASCII hash '*....' is safe as plain text
             echo "CREATE USER \`$user\`@\`$host\` IDENTIFIED WITH '$plugin' AS '$auth';" >> "$FILE"
          else
-            # бинарните стойности (напр. caching_sha2_password) подаваме като 0xHEX
+            # binary values (e.g. caching_sha2_password) are provided as 0xHEX
             echo "CREATE USER \`$user\`@\`$host\` IDENTIFIED WITH '$plugin' AS 0x$auth_hex;" >> "$FILE"
          fi
       fi
 	  
-      # Ако има акаунта е заключен
+      # If the account is locked
       if [[ "$locked" == "Y" ]]; then
          echo "ALTER USER '$user'@'$host' ACCOUNT LOCK;" >> "$FILE"
       fi
 	  
-      # Ако е конфигуриран да не може да се преизползва никоя от последните 5 пароли.
+      # If configured so none of the last 5 passwords can be reused
       if [[ "$Pass_reuse_history" -gt 0 ]]; then
          echo "ALTER USER '$user'@'$host' PASSWORD HISTORY $Pass_reuse_history;" >> "$FILE"
       fi	  
 
-      # Ако е конфигуриран да не може една и съща парола не може да се ползва по-често от веднъж годишно.
+      # If configured so the same password cannot be used more often than once per year
       if [[ "$Pass_reuse_time" -gt 0 ]]; then
          echo "ALTER USER '$user'@'$host' PASSWORD REUSE INTERVAL $Pass_reuse_time DAY;" >> "$FILE"
       fi
 
-      # Ако има конфигуриран максимален брой конекции 
+      # If a maximum number of connections is configured
       if [[ "$max_user_connections" -gt 0 ]]; then
          echo "ALTER USER '$user'@'$host' WITH MAX_USER_CONNECTIONS $max_user_connections;" >> "$FILE"
       fi
 
-      # Ако има конфигуриран Акаунтът да се заключва след определен брой неуспешни опита за вход.
+      # If the account is configured to lock after a certain number of failed login attempts
       if [[ "$failed_login_attempts" -gt 0 ]]; then
          echo "ALTER USER '$user'@'$host' FAILED_LOGIN_ATTEMPTS $failed_login_attempts;" >> "$FILE"
       fi
 
-      # Ако има конфигуриран Заключването е за неопределено/определено време (изисква ръчно отключване).
+      # If configured so the lock is indefinite/for a fixed time (requires manual unlock).
       if [[ "$password_lock_time_days" -eq -1 ]]; then
          echo "ALTER USER '$user'@'$host' PASSWORD_LOCK_TIME UNBOUNDED;" >> "$FILE"
       elif [[ "$password_lock_time_days" -gt 0 ]]; then
          echo "ALTER USER '$user'@'$host' PASSWORD_LOCK_TIME password_lock_time_days DAY;" >> "$FILE"
       fi
 
-      # Ако има дефинирани определени дни в които паролата да е валидна 
+      # If certain days are defined during which the password is valid
       if [[ "$pass_lifetime" -gt 0 ]]; then
          echo "ALTER USER '$user'@'$host' PASSWORD EXPIRE INTERVAL $pass_lifetime DAY;" >> "$FILE"
 
          if [[ -n "$pass_changed" ]]; then
-            echo "-- Последна промяна на паролата за '$user'@'$host': $pass_changed" >> "$FILE"
+            echo "-- Last password change for '$user'@'$host': $pass_changed" >> "$FILE"
          fi
       fi
 
 	fi
 	
-   # Ако паролата трябва да се смени при първо влизане
+   # If the password must be changed at first login
    if [[ "$pass_expired" == "Y" || "$pass_expired" == "1" ]]; then
       echo "ALTER USER '$user'@'$host' PASSWORD EXPIRE;" >> "$FILE"
    fi
@@ -418,35 +418,35 @@ if [[ "$MODE" == "backup" ]]; then
       if [[ $? -eq 0 ]]; then
          filtered_grants=$(filter_grants_for_target_version "$grants")
 
-         # Премахни IDENTIFIED BY PASSWORD
+         # Remove IDENTIFIED BY PASSWORD
          filtered_grants=$(echo "$filtered_grants" | sed -E "s/[[:space:]]*IDENTIFIED BY PASSWORD '[^']+'//g" | sed -E 's/[[:space:]]+WITH GRANT OPTION/ WITH GRANT OPTION/')
 
       while read -r grant; do
          echo "$grant;" >> "$FILE"
       done <<< "$filtered_grants"
       else
-         echo "-- ⚠️ Грешка при извличане на привилегии за '$user'@'$host'" >> "$FILE"
+         echo "-- ⚠️ Error retrieving privileges for '$user'@'$host'" >> "$FILE"
       fi
 
 		filtered_grants=$(filter_grants_for_target_version "$grants")
 
-		# Премахни IDENTIFIED BY PASSWORD
+		# Remove IDENTIFIED BY PASSWORD
 		filtered_grants=$(echo "$filtered_grants" | sed -E "s/[[:space:]]*IDENTIFIED BY PASSWORD '[^']+'//g" | sed -E 's/[[:space:]]+WITH GRANT OPTION/ WITH GRANT OPTION/')
 
    else
-      echo "-- ⚠️ Неуспешно извличане на GRANTS за $user@$host" >> "$FILE"
+      echo "-- ⚠️ Failed to retrieve GRANTS for $user@$host" >> "$FILE"
    fi
     
    echo "FLUSH PRIVILEGES;" >> "$FILE"
    done
 
-   echo "✅ Архивирането приключи: $FILE"
+   echo "✅ Backup completed: $FILE"
 
    elif [[ "$MODE" == "restore" ]]; then
-      echo "▶️ Възстановяване на потребителите от $FILE..."
+      echo "▶️ Restoring users from $FILE..."
       mysql -u"$MYSQL_USER" -p"$MYSQL_PASS" -h "$MYSQL_HOST" -P "$MYSQL_PORT" < "$FILE"
-      echo "✅ Възстановяването приключи."
+      echo "✅ Restore completed."
    else
-      echo "⚠️ Невалиден режим! Използвай -m [backup|restore]"
+      echo "⚠️ Invalid mode! Use -m [backup|restore]"
       usage
 fi
