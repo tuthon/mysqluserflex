@@ -1,11 +1,12 @@
 -- ====================================================================================
--- РАЗШИРЕН СКРИПТ ЗА СЪЗДАВАНЕ НА ТЕСТОВИ ПОТРЕБИТЕЛИ В MYSQL 8.0
--- Включва различни плъгини за автентикация и политики за пароли.
+-- ADVANCED SCRIPT FOR CREATING TEST USERS IN MYSQL 8.0
+-- Includes different authentication plugins and password policies.
 -- ====================================================================================
 
--- --- ЧАСТ 0: Подготовка ---
--- Препоръчително е да се изтрият потребителите, ако вече съществуват,
--- за да може скриптът да се изпълнява отново и отново за тестове.
+-- --- PART 0: Preparation ---
+-- It is recommended to delete the users if they already exist,
+-- so that the script can be executed repeatedly for testing.
+
 DROP USER IF EXISTS 'readonly_user'@'%';
 DROP USER IF EXISTS 'readwrite_user'@'localhost';
 DROP USER IF EXISTS 'app_user'@'%';
@@ -19,111 +20,111 @@ DROP USER IF EXISTS 'expiring_soon'@'localhost';
 DROP USER IF EXISTS 'locked_user'@'%';
 DROP USER IF EXISTS 'policy_user'@'localhost';
 
--- Създаваме и тестова база данни
+-- also create a test database
 CREATE DATABASE IF NOT EXISTS test_db;
 USE test_db;
 
 -- ====================================================================================
--- --- ЧАСТ 1: ПОТРЕБИТЕЛИ С РАЗЛИЧНИ ПЛЪГИНИ ЗА АВТЕНТИКАЦИЯ ---
+-- --- PART 1: USERS WITH DIFFERENT AUTHENTICATION PLUGINS ---
 -- ====================================================================================
 -- ---------------------------------------------------------------------
--- 1. Потребител Read-Only (Само за четене)
--- Този потребител може само да изпълнява SELECT заявки към всички таблици
--- в базата 'test_db' от всякакъв хост (%).
+-- 1. Read-Only User
+-- This user can only execute SELECT queries on all tables
+-- in the 'test_db' database from any host (%).
 -- ---------------------------------------------------------------------
 CREATE USER 'readonly_user'@'%' IDENTIFIED BY 'ReadOnlyPass123!';
 GRANT SELECT ON `test_db`.* TO 'readonly_user'@'%';
 
--- 2. Потребител Read/Write (За четене и писане)
--- Този потребител може да чете, вмъква, обновява и трие данни,
--- но само когато се свързва от същата машина (localhost).
+-- 2. Read/Write User
+-- This user can read, insert, update, and delete data,
+-- but only when connecting from the same machine (localhost).
 -- ---------------------------------------------------------------------
 CREATE USER 'readwrite_user'@'localhost' IDENTIFIED BY 'ReadWritePass456!';
 GRANT SELECT, INSERT, UPDATE, DELETE ON `test_db`.* TO 'readwrite_user'@'localhost';
 
--- 3. Потребител Application User (Типичен потребител за приложение)
--- Този потребител има права да управлява данните (DML) и структурата (DDL)
--- на базата данни 'test_db'. Достъпът е разрешен от всякъде (%).
+-- 3. Application User (Typical application user)
+-- This user has rights to manage both the data (DML) and the structure (DDL)
+-- of the 'test_db' database. Access is allowed from anywhere (%).
 -- ---------------------------------------------------------------------
 CREATE USER 'app_user'@'%' IDENTIFIED BY 'AppUserPass789!';
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES ON `test_db`.* TO 'app_user'@'%';
 
--- 4. Потребител Admin User (Администратор за конкретна база данни)
--- Този потребител има всички права върху 'test_db', включително правото
--- да дава права на други потребители (WITH GRANT OPTION).
+-- 4. Admin User (Administrator for a specific database)
+-- This user has all privileges on 'test_db', including the right
+-- to grant privileges to other users (WITH GRANT OPTION).
 -- ---------------------------------------------------------------------
 CREATE USER 'db_admin'@'localhost' IDENTIFIED BY 'AdminPass!@#';
 GRANT ALL PRIVILEGES ON `test_db`.* TO 'db_admin'@'localhost' WITH GRANT OPTION;
 
--- 5. Потребител с caching_sha2_password (стандартен за MySQL 8.0)
--- Това е плъгинът по подразбиране. Не е нужно да го указвате изрично.
+-- 5. User with caching_sha2_password (default in MySQL 8.0)
+-- This is the default plugin. You don’t need to specify it explicitly.
 CREATE USER 'sha2_cache_user'@'%' IDENTIFIED BY 'CacheSha2Pass1!';
 GRANT SELECT ON test_db.* TO 'sha2_cache_user'@'%';
--- КОМЕНТАР: Най-сигурният и препоръчителен метод за нови приложения.
+-- COMMENT: The most secure and recommended method for new applications.
 
--- 6. Потребител с mysql_native_password (старият метод от MySQL 5.x)
--- Необходимо е да се укаже изрично с `IDENTIFIED WITH`.
+-- 6. User with mysql_native_password (the old method from MySQL 5.x)
+-- It must be explicitly specified with `IDENTIFIED WITH`.
 CREATE USER 'native_user'@'localhost' IDENTIFIED WITH mysql_native_password BY 'NativePass57!';
 GRANT SELECT, INSERT ON test_db.* TO 'native_user'@'localhost';
--- КОМЕНТАР: Полезен за съвместимост със стари приложения и драйвери, които не поддържат caching_sha2_password.
+-- COMMENT: Useful for compatibility with older applications and drivers that do not support caching_sha2_password.
 
--- 7. Потребител с sha256_password
--- По-сигурен от native, но по-рядко използван от caching_sha2_password.
+-- 7. User with sha256_password
+-- More secure than native, but less commonly used compared to caching_sha2_password.
 CREATE USER 'sha256_user'@'localhost' IDENTIFIED WITH sha256_password BY 'SHA256Pass!';
-GRANT USAGE ON *.* TO 'sha256_user'@'localhost'; -- USAGE означава "без права", само право за връзка.
--- КОМЕНТАР: По подразбиране изисква SSL/TLS връзка или връзка през сокет файл. В противен случай паролата се праща в чист текст.
+GRANT USAGE ON *.* TO 'sha256_user'@'localhost'; -- USAGE means "no privileges", only the right to connect.
+-- COMMENT: By default requires an SSL/TLS connection or a socket connection. Otherwise, the password is sent in plain text.
 
--- 8. Потребител с auth_socket (само за Linux/Unix)
--- Този потребител НЯМА парола. Автентикацията се извършва на база потребителя на операционната система.
--- За да работи, трябва да се свържете към MySQL от ОС потребител с име 'testuser'.
+-- 8. User with auth_socket (Linux/Unix only)
+-- This user has NO password. Authentication is performed based on the operating system user.
+-- To make it work, you must connect to MySQL from an OS user named 'testuser'.
 CREATE USER 'testuser'@'localhost' IDENTIFIED WITH auth_socket;
 GRANT SELECT ON test_db.* TO 'testuser'@'localhost';
--- КОМЕНТАР: Много сигурен метод за локални скриптове и системни задачи.
--- ЗА ДА ТЕСТВАТЕ: Влезте в терминала като потребител 'testuser' (или `sudo -u testuser mysql`) и изпълнете `mysql -u testuser`.
+-- COMMENT: Very secure method for local scripts and system tasks.
+-- TO TEST: Log into the terminal as the 'testuser' user (or `sudo -u testuser mysql`) and run `mysql -u testuser`.
 
 
 -- ====================================================================================
--- --- ЧАСТ 2: ПОТРЕБИТЕЛИ С ПОЛИТИКИ ЗА ПАРОЛИТЕ ---
+-- --- PART 2: USERS WITH PASSWORD POLICIES ---
 -- ====================================================================================
 
--- 9. Потребител с незабавно изтичаща парола
--- При първото си влизане, потребителят ще бъде принуден да смени паролата си.
+-- 9. User with an immediately expiring password
+-- At the first login, the user will be forced to change their password.
 CREATE USER 'expired_user'@'localhost' IDENTIFIED BY 'MustChangeThis1!';
 ALTER USER 'expired_user'@'localhost' PASSWORD EXPIRE;
 GRANT SELECT ON test_db.* TO 'expired_user'@'localhost';
 
--- 10. Потребител с парола, която изтича след определен период
--- Паролата ще бъде валидна за 90 дни, след което ще трябва да се смени.
+-- 10. User with a password that expires after a specific period
+-- The password will be valid for 90 days, after which it must be changed.
 CREATE USER 'expiring_soon'@'localhost' IDENTIFIED BY 'ExpiresIn90Days!';
 ALTER USER 'expiring_soon'@'localhost' PASSWORD EXPIRE INTERVAL 90 DAY;
 GRANT SELECT ON test_db.* TO 'expiring_soon'@'localhost';
 
--- 11. Заключен потребител (Locked Account)
--- Този потребител не може да влезе в системата, докато акаунтът му не бъде отключен ръчно.
+-- 11. Locked User (Locked Account)
+-- This user cannot log in until the account is manually unlocked.
 CREATE USER 'locked_user'@'%' IDENTIFIED BY 'CannotLogin1!';
 ALTER USER 'locked_user'@'%' ACCOUNT LOCK;
 GRANT SELECT ON test_db.* TO 'locked_user'@'%';
--- За да го отключите: ALTER USER 'locked_user'@'localhost' ACCOUNT UNLOCK;
+-- To unlock: ALTER USER 'locked_user'@'localhost' ACCOUNT UNLOCK;
 
--- 12. Потребител със сложна политика за паролата
--- Комбинация от няколко правила за сигурност.
+-- 12. User with a complex password policy
+-- A combination of several security rules.
 CREATE USER 'policy_user'@'localhost' IDENTIFIED BY 'ComplexPolicyPass1!';
 ALTER USER 'policy_user'@'localhost'
-    PASSWORD HISTORY 5                 -- Не може да се преизползва никоя от последните 5 пароли.
-    PASSWORD REUSE INTERVAL 365 DAY    -- Една и съща парола не може да се ползва по-често от веднъж годишно.
-    FAILED_LOGIN_ATTEMPTS 3            -- Акаунтът се заключва след 3 неуспешни опита за вход.
-    PASSWORD_LOCK_TIME UNBOUNDED;      -- Заключването е за неопределено време (изисква ръчно отключване).
+    PASSWORD HISTORY 5                 -- None of the last 5 passwords can be reused.
+    PASSWORD REUSE INTERVAL 365 DAY    -- The same password cannot be used more than once per year.
+    FAILED_LOGIN_ATTEMPTS 3            -- The account is locked after 3 failed login attempts.
+    PASSWORD_LOCK_TIME UNBOUNDED;      -- The lock is indefinite (requires manual unlocking).
 GRANT SELECT ON test_db.* TO 'policy_user'@'localhost';
 
 
 -- ====================================================================================
--- --- ЧАСТ 3: Финализиране и проверка ---
+-- --- PART 3: Finalization and verification ---
 -- ====================================================================================
 FLUSH PRIVILEGES;
 
 SELECT 'Разширеният списък с тестови потребители е създаден успешно!' AS Status;
 
--- Заявка за проверка на създадените потребители и техните настройки
+-- Query to check the created users and their settings
 SELECT
     user,
     host,
