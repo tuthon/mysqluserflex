@@ -1,7 +1,5 @@
 #!/bin/bash
 
-#!/bin/bash
-
 SCRIPT_NAME=$(basename "$0")
 SCRIPT_PATH=$(cd "$(dirname "$0")" && pwd)
 
