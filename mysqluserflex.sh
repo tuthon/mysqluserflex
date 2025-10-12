@@ -413,7 +413,7 @@ if [[ "$MODE" == "backup" ]]; then
       echo "ALTER USER '$user'@'$host' PASSWORD EXPIRE;" >> "$FILE"
    fi
 
-   if grants=$(eval "$(build_mysql_command) -N -e \"SHOW GRANTS FOR \\\`$user\\\`@\\\`$host\\\`\"" 2>/dev/null); then
+   if grants=$($(build_mysql_command) -B -N -r -e "SHOW GRANTS FOR \`$user\`@\`$host\`;"); then
 
       if [[ $? -eq 0 ]]; then
          filtered_grants=$(filter_grants_for_target_version "$grants")
