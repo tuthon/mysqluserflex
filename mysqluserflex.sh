@@ -4,7 +4,7 @@ SCRIPT_NAME=$(basename "$0")
 SCRIPT_PATH=$(cd "$(dirname "$0")" && pwd)
 
 echo "▶️ $SCRIPT_NAME started from $SCRIPT_PATH"
-echo "📌 Script version: v1.0.16"
+echo "📌 Script version: v1.0.17"
 
 # Script for backing up and restoring MySQL users
 # Supports MySQL 5.6, 5.7, and 8.0+
@@ -84,15 +84,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 
-# Build the base mysql client command string with parameters
-# Ensures full compatibility with socket/port in both backup and restore
+# Build the base mysql client command as an ARRAY (MYSQL_CMD) with parameters.
+# Used as "${MYSQL_CMD[@]}" - no eval and no word splitting, so passwords
+# with special characters ($ & ( ) ; ' " * ? space ...) are passed unchanged.
 build_mysql_command() {
-  local cmd=(mysql -u"$MYSQL_USER")
-  [[ -n "$MYSQL_PASS" ]] && cmd+=( -p"$MYSQL_PASS" )
-  [[ -n "$MYSQL_HOST" ]] && cmd+=( -h "$MYSQL_HOST" )
-  [[ -n "$MYSQL_PORT" ]] && cmd+=( -P "$MYSQL_PORT" )
-  [[ -n "$MYSQL_SOCKET" ]] && cmd+=( --socket="$MYSQL_SOCKET" )
-  echo "${cmd[@]}"
+  MYSQL_CMD=(mysql -u"$MYSQL_USER")
+  [[ -n "$MYSQL_PASS" ]] && MYSQL_CMD+=( -p"$MYSQL_PASS" )
+  [[ -n "$MYSQL_HOST" ]] && MYSQL_CMD+=( -h "$MYSQL_HOST" )
+  [[ -n "$MYSQL_PORT" ]] && MYSQL_CMD+=( -P "$MYSQL_PORT" )
+  [[ -n "$MYSQL_SOCKET" ]] && MYSQL_CMD+=( --socket="$MYSQL_SOCKET" )
 }
 
 
@@ -124,14 +124,17 @@ detect_mysql_version() {
     exit 1
   fi
  
-  local version
-  version=$(eval "$(build_mysql_command) -N -e 'SELECT VERSION();'" 2>/dev/null)
-  
+  local version errfile
+  errfile=$(mktemp)
+  version=$("${MYSQL_CMD[@]}" --connect-timeout=8 -N -e 'SELECT VERSION();' 2>"$errfile")
 
   if [[ -z "$version" ]]; then
     echo "❌ Failed to retrieve the MySQL version. Check if you have access to the server and if the parameters are correct."
+    grep -v 'Using a password on the command line' "$errfile" | sed 's/^/   mysql: /'
+    rm -f "$errfile"
     exit 1
   fi
+  rm -f "$errfile"
 
   if [[ $version =~ ^5\.6 ]]; then
     MYSQL_MAJOR_VERSION="5.6"
@@ -174,7 +177,7 @@ generate_safe_drop_user() {
 
 # Generate a password of 12–16 characters, containing uppercase, lowercase, digits, and special symbols
 generate_strong_password() {
-  LC_ALL=C tr -dc 'A-Za-z0-9!@#$%^&*()-_=+[]{}<>?' </dev/urandom | head -c 14
+  LC_ALL=C tr -dc 'A-Za-z0-9!@#$%^&*()_=+[]{}<>?-' </dev/urandom | head -c 14
 }
 
 if [[ "$GENERATE_PASSWORDS" -eq 1 ]]; then
@@ -204,6 +207,8 @@ if [[ $PROMPT_PASS -eq 1 ]]; then
   echo
 fi
 
+build_mysql_command
+
 # Check if all selected users exist (supports user and user@host)
 if [[ -n "$FILTER_USER" ]]; then
   IFS=',' read -ra USERS <<< "$FILTER_USER"
@@ -218,7 +223,7 @@ if [[ -n "$FILTER_USER" ]]; then
     fi
 
     # Explicitly set timeout, -B/-N for silent output, and trim whitespace
-    exists=$($(build_mysql_command) --connect-timeout=8 -B -N \
+    exists=$("${MYSQL_CMD[@]}" --connect-timeout=8 -B -N \
       -e "SELECT COUNT(*) FROM mysql.user WHERE User='${username}' AND Host='${hostname}';" 2>/dev/null \
       | tr -d '[:space:]')
 
@@ -241,7 +246,7 @@ user_exists() {
   local user="$1"
   local host="$2"
   local count
-  count=$(eval "$(build_mysql_command) -N -e \"SELECT COUNT(*) FROM mysql.user WHERE user='$user' AND host='$host';\"" 2>/dev/null)  
+  count=$("${MYSQL_CMD[@]}" -N -e "SELECT COUNT(*) FROM mysql.user WHERE user='$user' AND host='$host';" 2>/dev/null)  
   
   [[ "$count" -gt 0 ]]
 }
@@ -298,7 +303,7 @@ if [[ "$MODE" == "backup" ]]; then
 						FROM mysql.user $WHERE_CLAUSE;"
 	fi  
 
-   eval "$(build_mysql_command) -N -e \"$QUERY\"" | \
+   "${MYSQL_CMD[@]}" -N -e "$QUERY" | \
 
    while IFS=$'\t' read -r user host plugin auth auth_hex pass_expired pass_changed pass_lifetime locked Pass_reuse_history Pass_reuse_time failed_login_attempts password_lock_time_days max_user_connections; do
  
@@ -392,7 +397,7 @@ if [[ "$MODE" == "backup" ]]; then
       if [[ "$password_lock_time_days" -eq -1 ]]; then
          echo "ALTER USER '$user'@'$host' PASSWORD_LOCK_TIME UNBOUNDED;" >> "$FILE"
       elif [[ "$password_lock_time_days" -gt 0 ]]; then
-         echo "ALTER USER '$user'@'$host' PASSWORD_LOCK_TIME password_lock_time_days DAY;" >> "$FILE"
+         echo "ALTER USER '$user'@'$host' PASSWORD_LOCK_TIME $password_lock_time_days;" >> "$FILE"
       fi
 
       # If certain days are defined during which the password is valid
@@ -411,7 +416,8 @@ if [[ "$MODE" == "backup" ]]; then
       echo "ALTER USER '$user'@'$host' PASSWORD EXPIRE;" >> "$FILE"
    fi
 
-   if grants=$($(build_mysql_command) -B -N -r -e "SHOW GRANTS FOR \`$user\`@\`$host\`;"); then
+ 
+   if grants=$("${MYSQL_CMD[@]}" -B -N -r -e "SHOW GRANTS FOR \`$user\`@\`$host\`;"); then
 
       if [[ $? -eq 0 ]]; then
          filtered_grants=$(filter_grants_for_target_version "$grants")
@@ -442,8 +448,12 @@ if [[ "$MODE" == "backup" ]]; then
 
    elif [[ "$MODE" == "restore" ]]; then
       echo "▶️ Restoring users from $FILE..."
-      mysql -u"$MYSQL_USER" -p"$MYSQL_PASS" -h "$MYSQL_HOST" -P "$MYSQL_PORT" < "$FILE"
-      echo "✅ Restore completed."
+      if "${MYSQL_CMD[@]}" < "$FILE"; then
+         echo "✅ Restore completed."
+      else
+         echo "❌ Restore failed - see the mysql error above."
+         exit 1
+      fi
    else
       echo "⚠️ Invalid mode! Use -m [backup|restore]"
       usage
